@@ -45,7 +45,7 @@ PMaxX EQU $80 ;Maximum X the Player can have
 PMinY EQU	$10 ;Minimum Y the Player can have
 PMaxY EQU $68 ;Maximum Y the Player can have
 
-FramesPerBeat EQU 26
+FramesPerBeat EQU 26 ;~140 BPM
 
 
 ;__Data__
@@ -79,6 +79,15 @@ Y4T EQU SCRN_VY_B*6
 Y5T EQU SCRN_VY_B*8
 Y6T EQU SCRN_VY_B*10
 
+;OAM Location offsets
+OAMY EQU 0
+OAMX EQU 1
+OAMPatt EQU 2
+OAMFlag EQU 3
+
+PlayerOAM EQU 0*4
+RocketOAM EQU 1*4
+
 ;__Cheats__
 Invincible EQU 1
 NoSpeedUp EQU 1
@@ -108,7 +117,7 @@ SECTION "variables",WRAM0
 Variables:
 ;__GAME__
 ;DMA
-OamData: ds 40*4 ;Mirror of the OAMData in Memory location $FE00-$FE9F, used for DMA transfers
+OamData: ds 40*4 ;Mirror of the OamData in Memory location $FE00-$FE9F, used for DMA transfers
 VBlankF ;This is set when a DMA Transfer occurs, and when the Gameboy wakes up after a halt used to check if it was because of a VBlank Interrupt
 
 ;POINTS AND HEALTH
@@ -132,6 +141,7 @@ TimerTicksDiv: ds 1 ;Increases each Time, TimerTicks gets Reset
 SpawnAsteroidF: ds 1 ;If this is set, the Main Loop should Spawn a new Asteroid
 UpdateAsteroidF: ds 1 ;If this is set, the Main Loop should update the Asteroids Stage
 DrawAsteroidF: ds 1 ;If this is set, the Main Loop should update the Asteroids on Screen
+SpawnRocketF: ds 1 ;If this is set, the Main Loop should spawn a new Rocket
 
 ;SCREEN EFFECTS
 ScreenShakeF: ds 1 ;If this is Higher than 0, we shake the Screen
@@ -145,9 +155,10 @@ CH1Note: ds 1
 CH2Note: ds 1
 CH3Note: ds 1
 
-;ASTEROID INFORMATION
+;ASTEROID AND ROCKET INFORMATION
 UpdateCycle: ds 1 ;The Gameboy can't update all the Tiles at once, so we only Update a few every Frame. This Variable saves what Tile we are on
 AsteroidLocations: ds 36 ;A list of all Squares and their Status
+RocketInfo: ds 1 ;Status of the Rocket
 
 ;TITLE
 StartTextBlinkTime: ds 1 ;A simulated Timer to blink the "Press Start" Text on and off
@@ -221,8 +232,12 @@ InitVariables:
 	;Clear Variables
 	ld a, 0
 	ld hl, Variables
-	ld bc, VariablesEnd-Variables+3
+	ld bc, VariablesEnd-Variables
 	call mem_Set
+
+	IF USEEASTEREGG
+	call InitEE
+	ENDC
 
 	;Init Health
 	ld a, MaxHealth
@@ -471,6 +486,22 @@ Game_Init:
 	ld bc, PlayerEnd-Player
 	call mem_Copy
 
+	;Init Rocket
+	ld a, $8F
+	ld [OamData+ RocketOAM+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+4+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+8+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+12+ OAMPatt], a
+
+	ld a, OAMF_PAL0
+	ld [OamData+ RocketOAM+ OAMFlag], a
+	ld [OamData+ RocketOAM+4+ OAMFlag], a
+	ld [OamData+ RocketOAM+8+ OAMFlag], a
+	ld [OamData+ RocketOAM+12+ OAMFlag], a
+
 	;Turn Screen on again
 	ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON
 	ld [rLCDC], a
@@ -496,14 +527,17 @@ Game_Init:
 ;----------------------------------------------
 MainLoop: ;Main Game Loop
 
-	call Music
+	call Music ;Play the Music
 
 	call GetPlayerSquare ;Get the Number of the Square the Player is standing on
 
-	call UpdateAsteroids
+	call UpdateAsteroids ;Update all Asteroids if requested
 	call SpawnAsteroid ;Spawn a new Asteroid if requested
 
-	call TakeDamage
+	call UpdateRocket
+	call SpawnRocket
+
+	call TakeDamage ;Take Damage if hit
 
 	call ReadJoypad ;Read Joypad presses, calculate Collisions and Move the Player
 
@@ -710,6 +744,66 @@ UpdateAsteroids:
 	ld a, $00
 	ld [hl], a
 	jr .prepnextloop
+
+SpawnRocket:
+	ld a, [SpawnRocketF]
+	or a
+	jr z, .endfunction
+	ld a, [RocketInfo]
+	or a
+	jr nz, .endfunction
+
+.tryspawn
+	call RandLFSR
+	ld a, [LFSRSeed]
+	cp $03
+	jr nc, .tryspawn
+	ld e, a
+	ld a, $00
+	ld d, a
+	ld hl, RocketStarts
+	add hl, de
+	ld a, [hl]
+
+	ld [OamData+ RocketOAM+ OAMY], a
+	ld [OamData+ RocketOAM+8+ OAMY], a
+	add a, $08
+	ld [OamData+ RocketOAM+4+ OAMY], a
+	ld [OamData+ RocketOAM+12+ OAMY], a
+
+	ld a, X1
+	ld [OamData+ RocketOAM+ OAMX], a
+	ld [OamData+ RocketOAM+4+ OAMX], a
+	add a, $08
+	ld [OamData+ RocketOAM+8+ OAMX], a
+	ld [OamData+ RocketOAM+12+ OAMX], a
+
+	ld a, $01
+	ld [RocketInfo], a
+
+.endfunction:
+	ld a, $00
+	ld [SpawnRocketF], a
+	ret
+
+UpdateRocket:
+	ld a, [RocketInfo]
+	or a
+	jr z, .endfunction
+	inc a
+	ld [RocketInfo], a
+
+	ld a, [OamData+ RocketOAM+ OAMX]
+	inc a
+	ld [OamData+ RocketOAM+ OAMX], a
+	ld [OamData+ RocketOAM+4+ OAMX], a
+	ld a, [OamData+ RocketOAM+8+ OAMX]
+	inc a
+	ld [OamData+ RocketOAM+8+ OAMX], a
+	ld [OamData+ RocketOAM+12+ OAMX], a
+
+.endfunction:
+	ret
 
 FixPoints:
 	ld hl, Points+PointSize ;Load the Location of the Rightmost Digit
@@ -976,6 +1070,14 @@ IncreaseTick:
 
 	ld a, $01
 	ld [SpawnAsteroidF], a ;Tell the Main Loop that we want to Spawn a new Asteroid
+
+	call RandLFSR
+	ld a, [LFSRSeed]
+	cp 75
+	jr nc, .tickincreaseend
+
+	ld a, $01
+	ld [SpawnRocketF], a
 
 .tickincreaseend:
 	pop af
@@ -1319,7 +1421,6 @@ Music:
 	jp .playhat
 .perc_return:
 
-
 .endfunction:
 	ret
 
@@ -1452,7 +1553,6 @@ IndexToRamLocA: ;Table to Convert the Square Index to a Screen Memory Location. 
 	db $98, $98, $98, $98, $98, $98
 	db $99, $99, $99, $99, $99, $99
 	db $99, $99, $99, $99, $99, $99
-
 IndexToRamLocB: ;Table to Convert the Square Index to a Screen Memory Location. This could be done by Multiplicating, but we save CPU power by precalculating the results
 	db $04, $06, $08, $0A, $0C, $0E
 	db $44, $46, $48, $4A, $4C, $4E
@@ -1460,6 +1560,9 @@ IndexToRamLocB: ;Table to Convert the Square Index to a Screen Memory Location. 
 	db $C4, $C6, $C8, $CA, $CC, $CE
 	db $04, $06, $08, $0A, $0C, $0E
 	db $44, $46, $48, $4A, $4C, $4E
+
+RocketStarts:
+	db Y2,Y3,Y4,Y5
 
 AsteroidStages: ;Tile Number for each Asteroid Stage
 	db $60,$64,$68,$6C,$70,$74,$78

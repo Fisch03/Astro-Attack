@@ -6,9 +6,6 @@ Astro Attack
 
 How to Play
 ---
-#### Story
-The Year is 2045. Humanity made their first contact with Aliens 10 Years ago. What started as a diplomatic exchange has escalated into a War between Planets. The Aliens try to cause a Mass extinction by bombing the Earth with Asteroids.
-
 #### Goal
 - The Asteroids are falling from the Sky. You can see their Shadows before they hit the Ground. If you fail to avoid them, you loose a Life
 - (WIP) Rockets are coming from the Edges of the Screen. If they hit you, you will also loose a Life.
@@ -33,4 +30,4 @@ The following Tools were used in the process of developing this Game:
 
 About
 ---
-I wanted to make a Gameboy for quite some Time, but never had the time for it. When my a friend of me got into Old consoles, I used the opportunity and made this Game for him.
+I wanted to make a Gameboy for quite some Time, but never really got start programming. When my a friend of me got into Old consoles, I used the opportunity and made this Game for him.
