@@ -8,7 +8,7 @@ How to Play
 ---
 #### Goal
 - The Asteroids are falling from the Sky. You can see their Shadows before they hit the Ground. If you fail to avoid them, you loose a Life
-- (WIP) Rockets are coming from the Edges of the Screen. If they hit you, you will also loose a Life.
+- Rockets are coming from the Edges of the Screen. If they hit you, you will also loose a Life.
 - Every Asteroid and Rocket you avoided gives you Points
 - Try to survive as Long as you can!
 

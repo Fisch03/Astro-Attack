@@ -159,6 +159,7 @@ CH3Note: ds 1
 UpdateCycle: ds 1 ;The Gameboy can't update all the Tiles at once, so we only Update a few every Frame. This Variable saves what Tile we are on
 AsteroidLocations: ds 36 ;A list of all Squares and their Status
 RocketInfo: ds 1 ;Status of the Rocket
+RocketY: ds 1
 
 ;TITLE
 StartTextBlinkTime: ds 1 ;A simulated Timer to blink the "Press Start" Text on and off
@@ -486,16 +487,6 @@ Game_Init:
 	ld bc, PlayerEnd-Player
 	call mem_Copy
 
-	;Init Rocket
-	ld a, $8F
-	ld [OamData+ RocketOAM+ OAMPatt], a
-	inc a
-	ld [OamData+ RocketOAM+4+ OAMPatt], a
-	inc a
-	ld [OamData+ RocketOAM+8+ OAMPatt], a
-	inc a
-	ld [OamData+ RocketOAM+12+ OAMPatt], a
-
 	ld a, OAMF_PAL0
 	ld [OamData+ RocketOAM+ OAMFlag], a
 	ld [OamData+ RocketOAM+4+ OAMFlag], a
@@ -528,6 +519,8 @@ Game_Init:
 MainLoop: ;Main Game Loop
 
 	call Music ;Play the Music
+
+	call PauseScreen
 
 	call GetPlayerSquare ;Get the Number of the Square the Player is standing on
 
@@ -756,8 +749,9 @@ SpawnRocket:
 .tryspawn
 	call RandLFSR
 	ld a, [LFSRSeed]
-	cp $03
+	cp RocketStartsEnd-RocketStarts
 	jr nc, .tryspawn
+	ld [RocketY], a
 	ld e, a
 	ld a, $00
 	ld d, a
@@ -778,6 +772,15 @@ SpawnRocket:
 	ld [OamData+ RocketOAM+8+ OAMX], a
 	ld [OamData+ RocketOAM+12+ OAMX], a
 
+	ld a, $8B
+	ld [OamData+ RocketOAM+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+4+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+8+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+12+ OAMPatt], a
+
 	ld a, $01
 	ld [RocketInfo], a
 
@@ -790,15 +793,39 @@ UpdateRocket:
 	ld a, [RocketInfo]
 	or a
 	jr z, .endfunction
+	cp $D0
+	jr nc, .despawn
 	inc a
 	ld [RocketInfo], a
+
+	cp $80
+	jr c, .endfunction
+
+	ld a, $8F
+	ld [OamData+ RocketOAM+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+4+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+8+ OAMPatt], a
+	inc a
+	ld [OamData+ RocketOAM+12+ OAMPatt], a
 
 	ld a, [OamData+ RocketOAM+ OAMX]
 	inc a
 	ld [OamData+ RocketOAM+ OAMX], a
 	ld [OamData+ RocketOAM+4+ OAMX], a
+
 	ld a, [OamData+ RocketOAM+8+ OAMX]
 	inc a
+	ld [OamData+ RocketOAM+8+ OAMX], a
+	ld [OamData+ RocketOAM+12+ OAMX], a
+
+	jr .endfunction
+
+.despawn:
+	ld a, $FF
+	ld [OamData+ RocketOAM+ OAMX], a
+	ld [OamData+ RocketOAM+4+ OAMX], a
 	ld [OamData+ RocketOAM+8+ OAMX], a
 	ld [OamData+ RocketOAM+12+ OAMX], a
 
@@ -839,11 +866,46 @@ TakeDamage:
 	ld a, [hl]
 
 	cp $05 ;Check if the Square is Currently Hit
-	jr nz, .endfunction ;If not, end the Function
-	ld a, ShakeDuration ;Start a Screen Shake
-	ld [ScreenShakeF], a
+	jr nz, .checkrockets ;If not, end the Function
+	call DecreaseLife
 	ld a, $00
 	ld [hl], a ;Reset the Asteroid
+
+.checkrockets:
+	ld a, [RocketInfo]
+	cp $80
+	jr c, .endfunction
+
+	ld a, [PSY]
+	ld b, a
+	ld a, [RocketY]
+	inc a
+	cp b
+	jr nz, .endfunction
+
+	ld a, [OamData+ PlayerOAM+ OAMX]
+	add $04
+	ld b, a
+	ld a, [OamData+ RocketOAM+ OAMX]
+	cp b
+	jr nc, .endfunction
+	add $0F
+	cp b
+	jr c, .endfunction
+	call DecreaseLife
+	ld a, $FF
+	ld [OamData+ RocketOAM+ OAMX], a
+	ld [OamData+ RocketOAM+4+ OAMX], a
+	ld [OamData+ RocketOAM+8+ OAMX], a
+	ld [OamData+ RocketOAM+12+ OAMX], a
+	ld [RocketInfo], a
+
+.endfunction:
+	ret
+
+DecreaseLife:
+	ld a, ShakeDuration ;Start a Screen Shake
+	ld [ScreenShakeF], a
 	ld a, [Health] ;Decrease the Lifes of the Player
 	dec a
 	cp $00 ;Check if the Health is at 0
@@ -851,7 +913,6 @@ TakeDamage:
 	jp z, Start ;CHANGE IN FUTURE!  If yes, restart the Game
 	ENDC
 	ld [Health], a
-.endfunction
 	ret
 
 RandLFSR: ;Generate a new (Pseudo)Random Number
@@ -1035,6 +1096,7 @@ DisplayAsteroids:
 ;-------------------------------------------
 IncreaseTick:
 	push af ;Save af to make sure it is the same when returning from Interrupt
+	push bc
 
 	ld a, [TimerTicks] ;Check if we have to reset the Ticks
 	cp 3
@@ -1055,16 +1117,17 @@ IncreaseTick:
 	inc a ;If not, Increase them
 	ld [TimerTicksDiv], a
 
+	jr .tickincreaseend
+
+.tickresetdiv:
+
 	IF !NoSpeedUp
-	;CHANGE IN FUTURE! Increase the timer Modulu to make the timer Reset fasters
+	;CHANGE IN FUTURE! Increase the timer Modulo to make the timer Reset fasters
 	ld a, [rTMA]
 	inc a
 	ld [rTMA], a
 	ENDC
 
-	jr .tickincreaseend
-
-.tickresetdiv:
 	ld a, $00 ;Reset the TicksDiv
 	ld [TimerTicksDiv], a
 
@@ -1080,7 +1143,9 @@ IncreaseTick:
 	ld [SpawnRocketF], a
 
 .tickincreaseend:
+	pop bc
 	pop af
+
 	reti
 
 ;-----------------JOYPAD--------------------
@@ -1225,7 +1290,7 @@ FixYHigh:
 	ld [OamData], a
 	jp ReadJoypadY_return
 
-PredictPlayerSquareY: ;The same as GetPlayerSquare, but only for Y, and the Result doesnt het saved into a Variable
+PredictPlayerSquareY: ;The same as GetPlayerSquare, but only for Y, and the Result doesnt get saved into a Variable
 .CheckY1:
 	add $04 ;Add 4 to look at the center of the player
 	cp Y2 ;Compare it with the Y Coordinate of the Square below
@@ -1562,7 +1627,8 @@ IndexToRamLocB: ;Table to Convert the Square Index to a Screen Memory Location. 
 	db $44, $46, $48, $4A, $4C, $4E
 
 RocketStarts:
-	db Y2,Y3,Y4,Y5
+	db Y1,Y2,Y3,Y4,Y5,Y6
+RocketStartsEnd:
 
 AsteroidStages: ;Tile Number for each Asteroid Stage
 	db $60,$64,$68,$6C,$70,$74,$78
