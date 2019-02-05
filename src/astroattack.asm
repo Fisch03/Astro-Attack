@@ -20,7 +20,6 @@ USEEASTEREGG EQU 1 ;Change this to 0 if you got these files without the EasterEg
 ;------------------------------------------------------
 INCLUDE "src/gbhw.inc" ;Hardware Definitions
 INCLUDE "src/ibmpc1.inc" ;ibmpc1 ACII text
-INCLUDE "src/charmap.inc" ;Map each Character to its corresponding Tile number
 
 ;-----------------CONSTANTS-----------------
 ;-------------------------------------------
@@ -101,9 +100,7 @@ CharsetSize EQU 16*96
 SECTION "Vblank", ROM0[$0040] ;Interrupt at VBlank
 	jp $FF80
 SECTION	"LCDC", ROM0[$0048]
-	IF USEEASTEREGG
-	jp EEScroll
-	ENDC
+	jp CRTScroll
 SECTION	"Timer_Overflow", ROM0[$0050] ;Interrupt at Timer Overflow
 	jp IncreaseTick ;Update the Tick Value
 SECTION "Serial", ROM0[$0058]
@@ -145,6 +142,7 @@ SpawnRocketF: ds 1 ;If this is set, the Main Loop should spawn a new Rocket
 
 ;SCREEN EFFECTS
 ScreenShakeF: ds 1 ;If this is Higher than 0, we shake the Screen
+RollingLine: ds 1
 
 ;MUSIC
 BeatProgress: ds 1 ;Gets incremented every Frame, at 140bpm one Beat takes ~26 Frames
@@ -161,12 +159,16 @@ AsteroidLocations: ds 36 ;A list of all Squares and their Status
 RocketInfo: ds 1 ;Status of the Rocket
 RocketY: ds 1
 
+;__MENU__
 ;TITLE
 StartTextBlinkTime: ds 1 ;A simulated Timer to blink the "Press Start" Text on and off
 StartTextStatus: ds 1 ;Whether the Text is on or off
 
 ;SPLASH
 HeartDir: ds 1
+
+;Pause Screen
+Paused: ds 1
 VariablesEnd:
 
 SECTION "start", ROM0[$0100]
@@ -217,6 +219,10 @@ Start: ;Program Start
 	;Enable Sound
 	ld a, $80
 	ld [rAUDENA], a
+
+	;Set the LCDC Interrupt to Trigger at HBLANK
+	ld a, STATF_MODE00
+	ld [rSTAT], a
 
 	;Start the timer at the Highest speed possible
 	ld a, TACF_START | TACF_262KHZ
@@ -295,6 +301,25 @@ InitVRAM: ;Load all Necessary Data from ROMto VRAM
 	ld de, OamData
 	ld bc, HeartEnd-Heart
 	call mem_Copy
+
+	;Copy the Playing Field into SCRN1, this is only used for the Pause Screen. Since SCRN1 is only used for this, we do it earlier to decrease Loading Time
+	ld hl, Background
+	ld de, _SCRN1
+	ld bc, SCRN_VX_B * SCRN_VY_B
+	call mem_CopyVRAM
+	ld hl, PointsText
+	ld de, _SCRN1+(SCRN_VY_B*14)+2
+	ld bc, PointsTextEnd-PointsText
+	call mem_CopyVRAM
+	ld hl, HealthText
+	ld de, _SCRN1+(SCRN_VY_B*15)+2
+	ld bc, HealthTextEnd-HealthText
+	call mem_CopyVRAM
+	;Add a "Paused Text"
+	ld hl, PauseText
+	ld de, _SCRN1+(SCRN_VY_B*5)+7
+	ld bc, PauseTextEnd-PauseText
+	call mem_CopyVRAM
 
 	;Turn Screen on again
 	ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON
@@ -433,6 +458,17 @@ textoff_return:
 	cp $08
 	jr z, TitleScreen
 
+.waitforrelease:
+	call WaitVblank
+	call Music
+	ld a, P1F_4 ;Select Buttons
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	and $08
+	cp $08
+	jr nz, .waitforrelease
 	jr Game_Init
 
 blinktext:
@@ -520,7 +556,7 @@ MainLoop: ;Main Game Loop
 
 	call Music ;Play the Music
 
-	call PauseScreen
+	call CheckPauseScreen
 
 	call GetPlayerSquare ;Get the Number of the Square the Player is standing on
 
@@ -545,8 +581,101 @@ MainLoop: ;Main Game Loop
 
 	jp MainLoop
 
+PauseLoop:
+	REPT 2
+	call WaitVblank
+	call Music
+	call CheckMainLoop
+	ENDR
+
+	ld a, [RollingLine]
+	inc a
+	ld [RollingLine], a
+
+	jp PauseLoop
+
+
 ;-----------------DATA FUNCTIONS--------------------
 ;---------------------------------------------------
+CheckPauseScreen:
+	ld a, P1F_4 ;Select Buttons
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	and $08
+	cp $08
+	jr z, .endfunction
+
+.waitforrelease:
+	call WaitVblank
+	call Music
+	ld a, P1F_4 ;Select Buttons
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	and $08
+	cp $08
+	jr nz, .waitforrelease
+
+.preparepause:
+	ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9C00|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON
+	ld [rLCDC], a
+
+	ld a, IEF_VBLANK | IEF_LCDC
+	ld [rIE], a
+	pop af
+
+	ld a, $01
+	ld [Paused], a
+
+	jr PauseLoop
+
+.endfunction:
+	ret
+
+CheckMainLoop:
+	ld a, P1F_4 ;Select Buttons
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	and $08
+	cp $08
+	jr z, .endfunction
+
+.waitforrelease:
+	call WaitVblank
+	call Music
+	ld a, P1F_4 ;Select Buttons
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	and $08
+	cp $08
+	jr nz, .waitforrelease
+
+.preparemain:
+	pop af
+	call WaitVblank
+	ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON
+	ld [rLCDC], a
+	ld a, $00
+	ld [rSCX], a
+
+	ld a, IEF_VBLANK | IEF_TIMER
+	ld [rIE], a
+
+	ld a, $00
+	ld [Paused], a
+
+	jp MainLoop
+
+.endfunction:
+	ret
+
 GetPlayerSquare:
 .CheckY1:
 	ld a, [OamData] ;Load the Player Y Coordinate
@@ -1583,6 +1712,8 @@ Music:
 ;-----------------CONSTANT DATA-------------
 ;-------------------------------------------
 
+INCLUDE "src/charmap.inc" ;Map each Character to its corresponding Tile number
+
 Player: ;Player starting OEM entry
 	db PMinY,PMinX,$88,OAMF_PAL0 ;Top Left Corner
 PlayerEnd:
@@ -1599,6 +1730,10 @@ HealthTextEnd:
 StartText:
 	db "PRESS START"
 StartTextEnd:
+
+PauseText:
+	db "PAUSED"
+PauseTextEnd:
 
 ;__SPLASH TEXT__
 MadewithText:
@@ -1699,6 +1834,35 @@ WaitVblankOld:
 	cp   145 ;Vblank is at 144, but we wait one more to make sure we don't interfere with the Vblank Interrupt
 	jr   nz, WaitVblankOld ;If not, Jump Back and try again
 	ret
+
+CRTScroll:
+	push af
+	push bc
+
+	ld a, [RollingLine]
+	ld b, a
+	ld a, [rLY]
+	cp b
+	jr z, .setscroll
+	REPT 8
+	inc a
+	cp b
+	jr z, .setscroll
+	ENDR
+
+.resetscroll:
+	ld a, $00
+	ld [rSCX], a
+	jr .endscroll
+
+.setscroll:
+	ld a, -2
+	ld [rSCX], a
+
+.endscroll:
+	pop bc
+	pop af
+	reti
 
 ;-----------------DMA-----------------------
 ;-------------------------------------------

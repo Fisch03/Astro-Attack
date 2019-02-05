@@ -15,6 +15,7 @@ How to Play
 #### Controls
 - Move with the Joypad
 - Press A while moving to Dash
+- Press Start to Pause the Game
 
 Assembling
 ---
