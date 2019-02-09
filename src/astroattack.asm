@@ -25,7 +25,7 @@ INCLUDE "src/ibmpc1.inc" ;ibmpc1 ACII text
 ;-------------------------------------------
 
 ;__Game Rules__
-MaxHealth EQU $03 ;Maximum Health / Starting Health
+MaxHealth EQU $05 ;Maximum Health / Starting Health
 PointSize EQU $06 ;Number of Digits in the Point Display
 
 AsteroidLifetime EQU $40 ;How long an Asteroid should last
@@ -115,7 +115,7 @@ Variables:
 ;__GAME__
 ;DMA
 OamData: ds 40*4 ;Mirror of the OamData in Memory location $FE00-$FE9F, used for DMA transfers
-VBlankF ;This is set when a DMA Transfer occurs, and when the Gameboy wakes up after a halt used to check if it was because of a VBlank Interrupt
+VBlankF: ds 1 ;This is set when a DMA Transfer occurs, and when the Gameboy wakes up after a halt used to check if it was because of a VBlank Interrupt
 
 ;POINTS AND HEALTH
 Points: ds PointSize ;1 Byte for each Digit of the Points Display
@@ -169,6 +169,8 @@ HeartDir: ds 1
 
 ;Pause Screen
 Paused: ds 1
+PlayerXSave: ds 1
+RocketXSave: ds 1
 VariablesEnd:
 
 SECTION "start", ROM0[$0100]
@@ -630,6 +632,18 @@ CheckPauseScreen:
 	ld a, $01
 	ld [Paused], a
 
+	ld a, [OamData+ PlayerOAM+ OAMX]
+	ld [PlayerXSave], a
+	ld a, [OamData+ RocketOAM+ OAMX]
+	ld [RocketXSave], a
+
+	ld a, $FF
+	ld [OamData+ PlayerOAM+ OAMX], a
+	ld [OamData+ RocketOAM+ OAMX], a
+	ld [OamData+ RocketOAM+4+ OAMX], a
+	ld [OamData+ RocketOAM+8+ OAMX], a
+	ld [OamData+ RocketOAM+12+ OAMX], a
+
 	jr PauseLoop
 
 .endfunction:
@@ -670,6 +684,16 @@ CheckMainLoop:
 
 	ld a, $00
 	ld [Paused], a
+
+	ld a, [PlayerXSave]
+	ld [OamData+ PlayerOAM+ OAMX], a
+
+	ld a, [RocketXSave]
+	ld [OamData+ RocketOAM+ OAMX], a
+	ld [OamData+ RocketOAM+4+ OAMX], a
+	add a, $08
+	ld [OamData+ RocketOAM+8+ OAMX], a
+	ld [OamData+ RocketOAM+12+ OAMX], a
 
 	jp MainLoop
 
@@ -957,6 +981,9 @@ UpdateRocket:
 	ld [OamData+ RocketOAM+4+ OAMX], a
 	ld [OamData+ RocketOAM+8+ OAMX], a
 	ld [OamData+ RocketOAM+12+ OAMX], a
+
+	ld a, $00
+	ld [RocketInfo], a
 
 .endfunction:
 	ret
