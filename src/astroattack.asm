@@ -100,7 +100,11 @@ CharsetSize EQU 16*96
 SECTION "Vblank", ROM0[$0040] ;Interrupt at VBlank
 	jp $FF80
 SECTION	"LCDC", ROM0[$0048]
-	jp CRTScroll
+	IF USEEASTEREGG
+	jp EEFX
+	ELSE
+	jp HBlankI
+	ENDC
 SECTION	"Timer_Overflow", ROM0[$0050] ;Interrupt at Timer Overflow
 	jp IncreaseTick ;Update the Tick Value
 SECTION "Serial", ROM0[$0058]
@@ -160,12 +164,16 @@ RocketInfo: ds 1 ;Status of the Rocket
 RocketY: ds 1
 
 ;__MENU__
+InGame: ds 1
+
 ;TITLE
 StartTextBlinkTime: ds 1 ;A simulated Timer to blink the "Press Start" Text on and off
 StartTextStatus: ds 1 ;Whether the Text is on or off
 
 ;SPLASH
 HeartDir: ds 1
+LogoOffset: ds 1
+OffsetDirection: ds 1
 
 ;Pause Screen
 Paused: ds 1
@@ -206,6 +214,40 @@ Start: ;Program Start
 
 	ld sp, $ffff ;Set Stack Pointer to last Memory Address
 
+	ld a, STATF_MODE00
+	ld [rSTAT], a
+
+AnimateNintendoLogo:
+	ld a, $00
+	ld [LogoOffset], a
+	ld [OffsetDirection], a
+	ld [InGame], a
+	IF USEEASTEREGG
+	call EEEarlyInit
+	ENDC
+
+	ld a, IEF_LCDC ;Enable the VBlank Interrupt
+	ld [rIE], a
+
+	ei
+.loop:
+	call WaitVblankOld
+	call WaitVblankOld
+	ld a, [LogoOffset]
+	inc a
+	ld [LogoOffset], a
+	cp $80
+	jp nz, .loop
+
+	di
+
+	call TurnLCDOff
+
+	;Set Scroll registers to 0 (Right Corner)
+	ld a, $00
+	ld [rSCX], a
+	ld [rSCY], a
+
 	ld a, %11100100 ;Load Color Palette (11 10 01 00)
 	ld [rBGP], a ;Save it into $ff47
 
@@ -213,18 +255,9 @@ Start: ;Program Start
 	ldh [rOBP0], a
 	ldh [rOBP1], a
 
-	;Set Scroll registers to 0 (Right Corner)
-	ld a, $00
-	ld [rSCX], a
-	ld [rSCY], a
-
 	;Enable Sound
 	ld a, $80
 	ld [rAUDENA], a
-
-	;Set the LCDC Interrupt to Trigger at HBLANK
-	ld a, STATF_MODE00
-	ld [rSTAT], a
 
 	;Start the timer at the Highest speed possible
 	ld a, TACF_START | TACF_262KHZ
@@ -257,8 +290,6 @@ InitVariables:
 	ld [MoveDistance], a
 
 InitVRAM: ;Load all Necessary Data from ROMto VRAM
-	call TurnLCDOff ;Turn the LCD off to allow VRAM Modifications
-
 	;Clear OAM
 	ld a, 0
 	ld hl, _OAMRAM
@@ -534,6 +565,9 @@ Game_Init:
 	;Turn Screen on again
 	ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON
 	ld [rLCDC], a
+
+	ld a, $01
+	ld [InGame], a
 
 	;Get the Time passed, and save it into the RNG Seed
 	ld a, [rTIMA]
@@ -1862,9 +1896,13 @@ WaitVblankOld:
 	jr   nz, WaitVblankOld ;If not, Jump Back and try again
 	ret
 
-CRTScroll:
+HBlankI:
 	push af
 	push bc
+
+	ld a, [InGame]
+	or a
+	jr z, .alternatingoffset
 
 	ld a, [RollingLine]
 	ld b, a
@@ -1890,6 +1928,26 @@ CRTScroll:
 	pop bc
 	pop af
 	reti
+
+.alternatingoffset:
+	ld a, [OffsetDirection]
+	or a
+	jr z, .negativeoffset
+.positiveoffset:
+	ld a, [LogoOffset]
+	ld [rSCX], a
+	ld a, $00
+	ld [OffsetDirection], a
+	jr .endscroll
+.negativeoffset
+	ld a, [LogoOffset]
+	ld b, a
+	ld a, $00
+	sub b
+	ld [rSCX], a
+	ld a, $01
+	ld [OffsetDirection], a
+	jr .endscroll
 
 ;-----------------DMA-----------------------
 ;-------------------------------------------
