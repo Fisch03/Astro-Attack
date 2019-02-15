@@ -88,7 +88,7 @@ PlayerOAM EQU 0*4
 RocketOAM EQU 1*4
 
 ;__Cheats__
-Invincible EQU 1
+Invincible EQU 0
 NoSpeedUp EQU 1
 
 ;__Other__
@@ -1100,10 +1100,78 @@ DecreaseLife:
 	dec a
 	cp $00 ;Check if the Health is at 0
 	IF !Invincible
-	jp z, Start ;CHANGE IN FUTURE!  If yes, restart the Game
+	jp z, GameOver ;If yes, show a Game Over Screen
 	ENDC
 	ld [Health], a
 	ret
+
+GameOver:
+	pop af ;Pop the Top Element containing the Return Address because we wont return
+
+	call WaitVblank
+	di
+
+	;Clear Background
+	ld a, $00
+	ld hl, _SCRN0
+	ld bc, SCRN_VX_B * SCRN_VY_B
+	call mem_SetVRAM
+
+	ld hl, GameOverText
+	ld de, _SCRN0+(SCRN_VY_B*7)+5
+	ld bc, GameOverTextEnd-GameOverText
+	call mem_CopyVRAM
+
+	ld a, $FF
+	ld [OamData+ PlayerOAM+ OAMX], a
+	ld [OamData+ RocketOAM+ OAMX], a
+	ld [OamData+ RocketOAM+4+ OAMX], a
+	ld [OamData+ RocketOAM+8+ OAMX], a
+	ld [OamData+ RocketOAM+12+ OAMX], a
+
+.waitforpress:
+	call WaitVblankOld
+	call Music
+	ld a, P1F_4 ;Select Buttons
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	and $08
+	cp $08
+	jr z, .waitforpress
+
+.waitforrelease:
+	call WaitVblankOld
+	call Music
+	ld a, P1F_4 ;Select Buttons
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	and $08
+	cp $08
+	jr nz, .waitforrelease
+
+	;Clear Variables
+	ld a, 0
+	ld hl, Variables
+	ld bc, VariablesEnd-Variables
+	call mem_Set
+
+	IF USEEASTEREGG
+	call InitEE
+	ENDC
+
+	;Init Health
+	ld a, MaxHealth
+	ld [Health], a
+
+	;Init MoveDistance
+	ld a, $01
+	ld [MoveDistance], a
+
+	jp InitTitle
 
 RandLFSR: ;Generate a new (Pseudo)Random Number
 	ld a, [LFSRSeed] ;Load the seed into b
@@ -1795,6 +1863,10 @@ StartTextEnd:
 PauseText:
 	db "PAUSED"
 PauseTextEnd:
+
+GameOverText:
+	db "GAME OVER"
+GameOverTextEnd:
 
 ;__SPLASH TEXT__
 MadewithText:
