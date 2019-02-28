@@ -15,6 +15,7 @@ How to Play
 #### Controls
 - Move with the Joypad
 - Press A while moving to Dash
+- Press B to use a Bomb and Clear the whole Screen
 - Press Start to Pause the Game
 
 Assembling

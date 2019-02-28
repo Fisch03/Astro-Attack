@@ -86,6 +86,9 @@ OAMFlag EQU 3
 
 PlayerOAM EQU 0*4
 RocketOAM EQU 1*4
+Bomb1OAM EQU 5*4
+Bomb2OAM EQU 9*4
+Bomb3OAM EQU 13*4
 
 ;__Cheats__
 Invincible EQU 0
@@ -124,6 +127,10 @@ VBlankF: ds 1 ;This is set when a DMA Transfer occurs, and when the Gameboy wake
 ;POINTS AND HEALTH
 Points: ds PointSize ;1 Byte for each Digit of the Points Display
 Health: ds 1
+
+;BOMBS
+Bombs: ds 1 ;How many Bombs the Player has
+BombActive: ds 1
 
 ;PLAYER LOCATION AND MOVEMENT
 PSI: ds 1 ;Index Number of the Square the Player is on
@@ -177,8 +184,6 @@ OffsetDirection: ds 1
 
 ;Pause Screen
 Paused: ds 1
-PlayerXSave: ds 1
-RocketXSave: ds 1
 VariablesEnd:
 
 SECTION "start", ROM0[$0100]
@@ -289,6 +294,9 @@ InitVariables:
 	ld a, $01
 	ld [MoveDistance], a
 
+	ld a, $03
+	ld [Bombs], a
+
 InitVRAM: ;Load all Necessary Data from ROMto VRAM
 	;Clear OAM
 	ld a, 0
@@ -310,12 +318,12 @@ InitVRAM: ;Load all Necessary Data from ROMto VRAM
 	;Load Game Tiles
 	ld hl, Tiles
 	ld de, _VRAM+CharsetSize ;Get VRAM Location
-	ld bc, 16*51;16 Bytes per Tile
+	ld bc, 16*55;16 Bytes per Tile
 	call	mem_CopyVRAM ;Copy Tileset into VRAM
 
 	;Load Title Tiles
 	ld hl, Title ;Load the Title Tiles into VRAM
-	ld de, _VRAM+CharsetSize+16*51 ;Load Tiles after the Charset and Game Tiles
+	ld de, _VRAM+CharsetSize+16*55 ;Load Tiles after the Charset and Game Tiles
 	ld bc, TitletilesSize ;Size of Tiles
 	call mem_CopyVRAM
 
@@ -556,6 +564,20 @@ Game_Init:
 	ld bc, PlayerEnd-Player
 	call mem_Copy
 
+	;Init Bombs
+	ld hl, Bomb1
+	ld de, OamData+Bomb1OAM
+	ld bc, Bomb1End-Bomb1
+	call mem_Copy
+	ld hl, Bomb2
+	ld de, OamData+Bomb2OAM
+	ld bc, Bomb2End-Bomb2
+	call mem_Copy
+	ld hl, Bomb3
+	ld de, OamData+Bomb3OAM
+	ld bc, Bomb3End-Bomb3
+	call mem_Copy
+
 	ld a, OAMF_PAL0
 	ld [OamData+ RocketOAM+ OAMFlag], a
 	ld [OamData+ RocketOAM+4+ OAMFlag], a
@@ -666,19 +688,12 @@ CheckPauseScreen:
 	ld a, $01
 	ld [Paused], a
 
-	ld a, [OamData+ PlayerOAM+ OAMX]
-	ld [PlayerXSave], a
-	ld a, [OamData+ RocketOAM+ OAMX]
-	ld [RocketXSave], a
+	;Hide all Sprites
+	ld a, %00000000
+	ld [rOBP0], a
+	ld [rOBP1], a
 
-	ld a, $FF
-	ld [OamData+ PlayerOAM+ OAMX], a
-	ld [OamData+ RocketOAM+ OAMX], a
-	ld [OamData+ RocketOAM+4+ OAMX], a
-	ld [OamData+ RocketOAM+8+ OAMX], a
-	ld [OamData+ RocketOAM+12+ OAMX], a
-
-	jr PauseLoop
+	jp PauseLoop
 
 .endfunction:
 	ret
@@ -719,15 +734,13 @@ CheckMainLoop:
 	ld a, $00
 	ld [Paused], a
 
-	ld a, [PlayerXSave]
-	ld [OamData+ PlayerOAM+ OAMX], a
+	;Show all Sprites
+	ld a, %11100100
+	ld [rOBP0], a
+	ld [rOBP1], a
 
-	ld a, [RocketXSave]
-	ld [OamData+ RocketOAM+ OAMX], a
-	ld [OamData+ RocketOAM+4+ OAMX], a
-	add a, $08
-	ld [OamData+ RocketOAM+8+ OAMX], a
-	ld [OamData+ RocketOAM+12+ OAMX], a
+	ld a, $00
+	ld [rSCX], a
 
 	jp MainLoop
 
@@ -1122,12 +1135,10 @@ GameOver:
 	ld bc, GameOverTextEnd-GameOverText
 	call mem_CopyVRAM
 
-	ld a, $FF
-	ld [OamData+ PlayerOAM+ OAMX], a
-	ld [OamData+ RocketOAM+ OAMX], a
-	ld [OamData+ RocketOAM+4+ OAMX], a
-	ld [OamData+ RocketOAM+8+ OAMX], a
-	ld [OamData+ RocketOAM+12+ OAMX], a
+	ld a, $00
+	ld hl, OamData
+	ld bc, 160
+	call mem_Set
 
 .waitforpress:
 	call WaitVblankOld
@@ -1201,6 +1212,23 @@ RandLFSR: ;Generate a new (Pseudo)Random Number
 	ld [LFSRSeed], a ;If it isn´t, save it as the new Seed
 
 	ret
+
+ClearAsteroids:
+	ld a, 36
+	ld hl, AsteroidLocations
+.loop:
+	ld b, a
+	ld a, $00
+	ld [hl+], a
+	ld a, b
+	dec a
+	or a
+	jr nz, .loop
+.endfunction:
+	ld a, $01
+	ld [DrawAsteroidF], a
+	ret
+
 
 ;-----------------VRAM FUNCTIONS--------------------
 ;---------------------------------------------------
@@ -1409,6 +1437,66 @@ IncreaseTick:
 ;-----------------JOYPAD--------------------
 ;-------------------------------------------
 ReadJoypad:
+CheckBomb:
+	ld a, [Bombs]
+	or a
+	jr z, Dash
+
+	ld a, P1F_4
+	ld [rP1], a
+	REPT 6
+	ld a, [rP1] ;Read Keypresses, we are doing this multiple Times to reduce Noise
+	ENDR
+	cpl
+
+	and $02
+	cp $02
+	jr nz, ResetBomb
+
+	ld a, [BombActive]
+	or a
+	jr nz, Dash
+
+	ld a, $01
+	ld [BombActive], a
+
+	ld a, $00
+	ld b, a
+	ld a, [Bombs]
+	dec a
+	ld c, a
+	ld [Bombs], a
+
+	ld hl, BombOAMLoc
+	add bc
+	ld a, [hl]
+	add OAMX
+	ld c, a
+
+	ld hl, OamData
+	add bc
+	ld a, $00
+	ld [hl], a
+	REPT 3
+	inc hl
+	inc hl
+	inc hl
+	inc hl
+	ld [hl], a
+	ENDR
+
+	ld a, $0B
+	ld [ScreenShakeF], a
+
+	call ClearAsteroids
+
+	jr Dash
+
+ResetBomb:
+	ld a, $00
+	ld [BombActive], a
+
+Dash:
 	ld a, [MoveDistance] ;Decrease the MoveDistance if it is higher than 1
 	cp $01
 	jr nz, UpdateMovDist ;If it is, we arent finished Dashing, so skip it
@@ -1893,6 +1981,27 @@ IndexToRamLocB: ;Table to Convert the Square Index to a Screen Memory Location. 
 	db $C4, $C6, $C8, $CA, $CC, $CE
 	db $04, $06, $08, $0A, $0C, $0E
 	db $44, $46, $48, $4A, $4C, $4E
+
+BombOAMLoc:
+	db Bomb1OAM,Bomb2OAM,Bomb3OAM
+Bomb1:
+	db $19,$10,$93,OAMF_PAL0
+	db $21,$10,$94,OAMF_PAL0
+	db $19,$18,$95,OAMF_PAL0
+	db $21,$18,$96,OAMF_PAL0
+Bomb1End:
+Bomb2:
+	db $28,$10,$93,OAMF_PAL0
+	db $30,$10,$94,OAMF_PAL0
+	db $28,$18,$95,OAMF_PAL0
+	db $30,$18,$96,OAMF_PAL0
+Bomb2End:
+Bomb3:
+	db $37,$10,$93,OAMF_PAL0
+	db $3F,$10,$94,OAMF_PAL0
+	db $37,$18,$95,OAMF_PAL0
+	db $3F,$18,$96,OAMF_PAL0
+Bomb3End:
 
 RocketStarts:
 	db Y1,Y2,Y3,Y4,Y5,Y6
