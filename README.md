@@ -32,4 +32,4 @@ The following Tools were used in the process of developing this Game:
 
 About
 ---
-I wanted to make a Gameboy for quite some Time, but never really got start programming. When my a friend of me got into Old consoles, I used the opportunity and made this Game for him.
+I wanted to make a Gameboy Game for quite some Time, but never really got start programming. When my a friend of me got into Old consoles, I used the opportunity and made this Game for him.
