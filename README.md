@@ -7,16 +7,16 @@ Astro Attack
 How to Play
 ---
 #### Goal
-- The Asteroids are falling from the Sky. You can see their Shadows before they hit the Ground. If you fail to avoid them, you loose a Life
+- The Asteroids are falling from the Sky. You can see their Shadows before they hit the Ground. If you fail to avoid them, you loose a life
 - Rockets are coming from the Edges of the Screen. If they hit you, you will also loose a Life.
-- Every Asteroid and Rocket you avoided gives you Points
-- Try to survive as Long as you can!
+- Every Asteroid and Rocket you avoided gives you points
+- Try to survive as long as you can!
 
 #### Controls
-- Move with the Joypad
+- Move with the D-pad
 - Press A while moving to Dash
-- Press B to use a Bomb and Clear the whole Screen
-- Press Start to Pause the Game
+- Press B to use a Bomb and Clear the whole screen
+- Press Start to pause the game
 
 Assembling
 ---
@@ -24,7 +24,7 @@ There is currently no makefile, so you have to assemble the ROM manually. To do 
 
 Tools
 ---
-The following Tools were used in the process of developing this Game:
+The following Tools were used in the process of developing this game:
 - [rgbds](https://github.com/rednex/rgbds) - Assembling the code
 - [BGB](http://bgb.bircd.org/) - Testing and debugging the ROM
 - [GBTD](http://www.devrs.com/gb/hmgd/gbtd.html) - Designing all the Tilesets
@@ -32,4 +32,4 @@ The following Tools were used in the process of developing this Game:
 
 About
 ---
-I wanted to make a Gameboy Game for quite some Time, but never really got start programming. When my a friend of me got into Old consoles, I used the opportunity and made this Game for him.
+I wanted to make a GameBoy game for quite some time, but never really got start programming. When my a friend of me got into old consoles, I used the opportunity and made this game for him.
